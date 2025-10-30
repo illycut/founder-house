@@ -1,0 +1,1273 @@
+# 📋 Black Ops CoSA - Product Backlog
+
+**Version:** 1.0  
+**Last Updated:** October 30, 2025  
+**Product Owner:** James Norman  
+**Development Team:** Black Ops VC Engineering
+
+---
+
+## Table of Contents
+1. [Backlog Overview](#backlog-overview)
+2. [Epic Definitions](#epic-definitions)
+3. [Phase 1: MVP Foundation (Weeks 1-4)](#phase-1-mvp-foundation-weeks-1-4)
+4. [Phase 2: Intelligence & Automation (Weeks 5-8)](#phase-2-intelligence--automation-weeks-5-8)
+5. [Phase 3: Advanced Features (Weeks 9-12)](#phase-3-advanced-features-weeks-9-12)
+6. [Icebox (Future Considerations)](#icebox-future-considerations)
+7. [Technical Debt & Maintenance](#technical-debt--maintenance)
+
+---
+
+## Backlog Overview
+
+### Prioritization Framework
+**MoSCoW Method:**
+- **Must Have:** Core functionality required for MVP launch
+- **Should Have:** Important features that significantly improve UX
+- **Could Have:** Nice-to-have features that add value but aren't critical
+- **Won't Have (this phase):** Features deferred to future phases
+
+### Story Point Estimation
+- **1 point:** 1-2 hours (simple config, basic CRUD)
+- **2 points:** 2-4 hours (straightforward feature with minor complexity)
+- **3 points:** 4-8 hours (moderate complexity, requires integration)
+- **5 points:** 1-2 days (complex feature with multiple components)
+- **8 points:** 2-3 days (high complexity, significant integration)
+- **13 points:** 3-5 days (very complex, possibly break down further)
+
+### Definition of Done
+- [ ] Code written and passes linting
+- [ ] Unit tests written (>80% coverage for critical paths)
+- [ ] Integration tests for API endpoints
+- [ ] Reviewed by at least one team member
+- [ ] Deployed to staging environment
+- [ ] Product Owner acceptance
+- [ ] Documentation updated
+
+---
+
+## Epic Definitions
+
+### Epic 1: Foundation & Infrastructure
+**Goal:** Set up core technical infrastructure and authentication  
+**Business Value:** Enables all other features, ensures security  
+**Success Metrics:** Successful deployment, <3s load times, 99% uptime
+
+### Epic 2: LP Data Management
+**Goal:** Build CRM functionality for managing LP organizations and contacts  
+**Business Value:** Centralized LP data repository  
+**Success Metrics:** 100% of existing LP data migrated, zero data loss
+
+### Epic 3: AI Email Generation
+**Goal:** Auto-generate personalized follow-up emails in James's tone  
+**Business Value:** 70% time savings on email drafting  
+**Success Metrics:** >60% drafts approved without edits within 30 days
+
+### Epic 4: Meeting Intelligence
+**Goal:** Automatically summarize Fireflies transcripts and update LP profiles  
+**Business Value:** Zero manual note-taking, instant context retrieval  
+**Success Metrics:** 100% of LP calls summarized within 24 hours
+
+### Epic 5: Follow-Up Automation
+**Goal:** Proactive follow-up recommendations based on engagement rules  
+**Business Value:** Zero LPs fall through cracks (>40 days without contact)  
+**Success Metrics:** <5% of pipeline exceeds 40-day follow-up window
+
+### Epic 6: Network Mapping
+**Goal:** Discover warm introduction paths through professional networks  
+**Business Value:** Higher LP conversion through warm intros  
+**Success Metrics:** 100% of LP orgs mapped to GP networks
+
+### Epic 7: Dashboard & Reporting
+**Goal:** Visual pipeline management and weekly email digests  
+**Business Value:** Real-time pipeline visibility, automated reporting  
+**Success Metrics:** Daily dashboard usage, 100% digest delivery rate
+
+### Epic 8: Gmail & Calendar Integration
+**Goal:** Sync emails and meetings for engagement tracking  
+**Business Value:** Automatic interaction logging, no manual data entry  
+**Success Metrics:** 100% of LP meetings auto-detected and logged
+
+---
+
+## Phase 1: MVP Foundation (Weeks 1-4)
+
+**Goal:** Launch basic CRM with AI email drafting and manual workflow support  
+**Target Launch Date:** Week of November 25, 2025
+
+---
+
+### Epic 1: Foundation & Infrastructure
+
+#### Story 1.1: Set up Supabase project and database schema
+**As a** developer  
+**I want to** provision Supabase project with production-ready configuration  
+**So that** we have a secure, scalable database foundation
+
+**Acceptance Criteria:**
+- [ ] Supabase project created with Pro tier subscription
+- [ ] PostgreSQL database provisioned
+- [ ] All tables from data model created (users, organizations, contacts, interactions, reminders, network_connections, email_drafts, embeddings)
+- [ ] pgvector extension enabled
+- [ ] Database connection string added to environment variables
+- [ ] Initial RLS policies enabled on all tables
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** None
+
+---
+
+#### Story 1.2: Implement authentication system
+**As a** GP user  
+**I want to** securely log in to the CoSA dashboard  
+**So that** my LP data is protected
+
+**Acceptance Criteria:**
+- [ ] Supabase Auth configured with email/password
+- [ ] Login page with email/password form
+- [ ] Password reset functionality
+- [ ] Session management (7-day expiry)
+- [ ] Protected routes redirect to login if unauthenticated
+- [ ] User role stored in users table (admin/partner/analyst)
+
+**Story Points:** 3  
+**Priority:** Must Have  
+**Dependencies:** 1.1
+
+---
+
+#### Story 1.3: Deploy frontend to Vercel
+**As a** developer  
+**I want to** deploy React application to Vercel  
+**So that** the dashboard is accessible via HTTPS
+
+**Acceptance Criteria:**
+- [ ] Vercel project created and linked to GitHub repo
+- [ ] Environment variables configured (Supabase URL, API keys)
+- [ ] Custom domain configured (e.g., cosa.blackopsvc.com)
+- [ ] SSL certificate auto-provisioned
+- [ ] Automatic deployments on push to main branch
+- [ ] Preview deployments for pull requests
+
+**Story Points:** 2  
+**Priority:** Must Have  
+**Dependencies:** 1.2
+
+---
+
+#### Story 1.4: Set up Replicate API for Llama 3 8B
+**As a** developer  
+**I want to** integrate Replicate API for LLM inference  
+**So that** we can generate AI content without managing infrastructure
+
+**Acceptance Criteria:**
+- [ ] Replicate account created and API key generated
+- [ ] Llama 3 8B model endpoint tested successfully
+- [ ] Helper function created for prompt → completion
+- [ ] Error handling for rate limits and API failures
+- [ ] Cost monitoring alert set at $100/month
+- [ ] Response caching for identical prompts (7-day TTL)
+
+**Story Points:** 3  
+**Priority:** Must Have  
+**Dependencies:** None
+
+---
+
+### Epic 2: LP Data Management
+
+#### Story 2.1: Build Organizations CRUD interface
+**As a** GP  
+**I want to** create, view, update, and delete LP organizations  
+**So that** I can manage my fundraising pipeline
+
+**Acceptance Criteria:**
+- [ ] Organizations list view with search and filters (stage, investor_type, priority)
+- [ ] Create new organization form with all required fields
+- [ ] Edit organization modal
+- [ ] Delete organization with confirmation prompt
+- [ ] Validation for check_size_min ≤ check_size_max
+- [ ] Tags input with autocomplete
+- [ ] Success/error toast notifications
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 1.3
+
+---
+
+#### Story 2.2: Build Contacts CRUD interface
+**As a** GP  
+**I want to** add and manage contacts at LP organizations  
+**So that** I can track individuals I'm communicating with
+
+**Acceptance Criteria:**
+- [ ] Contacts list within organization detail view
+- [ ] Add contact form (first name, last name, email, position, LinkedIn URL)
+- [ ] Edit contact inline or via modal
+- [ ] Delete contact with confirmation
+- [ ] Email validation (must be valid format)
+- [ ] LinkedIn URL validation (must start with https://linkedin.com/)
+- [ ] Auto-link contacts to organization
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 2.1
+
+---
+
+#### Story 2.3: Build LP profile detail page
+**As a** GP  
+**I want to** view comprehensive profile for each LP organization  
+**So that** I have all context in one place before outreach
+
+**Acceptance Criteria:**
+- [ ] Organization header with name, stage, priority, investor type
+- [ ] Key stats card (check size, fund size, days since contact)
+- [ ] Contacts section with list of people
+- [ ] Tags display with color coding
+- [ ] Thesis and notes sections
+- [ ] Quick actions: "Generate Follow-Up", "Log Interaction", "Set Reminder"
+- [ ] Responsive design (mobile-friendly)
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 2.1, 2.2
+
+---
+
+#### Story 2.4: Implement CSV import for organizations
+**As a** GP  
+**I want to** import existing LP data from CSV/Airtable export  
+**So that** I don't have to manually re-enter data
+
+**Acceptance Criteria:**
+- [ ] CSV upload interface with drag-and-drop
+- [ ] Column mapping tool (match CSV headers to database fields)
+- [ ] Data validation preview before import
+- [ ] Conflict resolution (skip, overwrite, or merge duplicates)
+- [ ] Import progress indicator
+- [ ] Success summary (X records imported, Y skipped, Z errors)
+- [ ] Error log downloadable for failed rows
+
+**Story Points:** 8  
+**Priority:** Should Have  
+**Dependencies:** 2.1
+
+---
+
+### Epic 3: AI Email Generation
+
+#### Story 3.1: Create email drafting agent prompt template
+**As a** developer  
+**I want to** define system prompt for email generation  
+**So that** drafts match James's tone and style
+
+**Acceptance Criteria:**
+- [ ] System prompt created with tone guidelines (warm, professional, 75-150 words)
+- [ ] Few-shot examples from 3 sample emails provided by James
+- [ ] Prompt includes placeholders for: LP name, last interaction summary, current stage, days since contact
+- [ ] Prompt tested with 5 different LP scenarios
+- [ ] Generated emails reviewed by James for tone accuracy
+- [ ] Prompt saved in code repository (not hardcoded)
+
+**Story Points:** 3  
+**Priority:** Must Have  
+**Dependencies:** 1.4
+
+---
+
+#### Story 3.2: Build "Generate Follow-Up Email" feature
+**As a** GP  
+**I want to** click a button to auto-generate a follow-up email for an LP  
+**So that** I save time drafting personalized outreach
+
+**Acceptance Criteria:**
+- [ ] "Generate Follow-Up" button on LP profile page
+- [ ] Loading state while LLM generates draft (with spinner)
+- [ ] Draft displayed in modal with subject and body
+- [ ] Context used: last interaction summary, org details, days since contact
+- [ ] Edit draft inline before saving
+- [ ] Save draft to email_drafts table with status = 'Pending Review'
+- [ ] Error handling if LLM fails (show fallback message)
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 2.3, 3.1
+
+---
+
+#### Story 3.3: Build draft review and approval interface
+**As a** GP  
+**I want to** review, edit, and approve AI-generated email drafts  
+**So that** I maintain quality control before sending
+
+**Acceptance Criteria:**
+- [ ] Drafts list page showing all pending drafts
+- [ ] Each draft card shows: recipient, subject, preview, organization name
+- [ ] Click to expand full draft with edit capability
+- [ ] Actions: "Approve & Send Now", "Schedule Send", "Edit", "Dismiss"
+- [ ] Schedule send picker (date + time)
+- [ ] Edit history tracked in edit_history JSONB field
+- [ ] Status updates: Pending Review → Approved/Edited/Dismissed
+- [ ] Confirm dialog before dismissing draft
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 3.2
+
+---
+
+#### Story 3.4: Implement scheduled email sending via Gmail API
+**As a** GP  
+**I want** approved drafts to be sent automatically at scheduled time  
+**So that** I don't have to manually send each email
+
+**Acceptance Criteria:**
+- [ ] Gmail API integrated with cos@blackopsvc.com service account
+- [ ] OAuth scopes: gmail.compose, gmail.send
+- [ ] Cron job checks email_drafts table every 15 minutes for scheduled_send_time ≤ NOW()
+- [ ] Email sent via Gmail API with from: cos@blackopsvc.com, reply-to: james@blackopsvc.com
+- [ ] On success: update status = 'Sent', store gmail_message_id, set sent_at timestamp
+- [ ] On failure: retry 3x with exponential backoff, then mark as failed and alert
+- [ ] Interaction created automatically when email sent
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 3.3
+
+---
+
+### Epic 4: Meeting Intelligence
+
+#### Story 4.1: Integrate Fireflies API
+**As a** developer  
+**I want to** connect to Fireflies API to fetch meeting transcripts  
+**So that** we can auto-summarize LP calls
+
+**Acceptance Criteria:**
+- [ ] Fireflies API key configured in environment variables
+- [ ] Helper function to fetch transcripts by meeting ID or date range
+- [ ] Test connection and retrieve sample transcript
+- [ ] Error handling for API rate limits
+- [ ] Transcript data stored temporarily for processing
+- [ ] Cron job scheduled to check for new transcripts daily at 8am PT
+
+**Story Points:** 3  
+**Priority:** Must Have  
+**Dependencies:** 1.4
+
+---
+
+#### Story 4.2: Build meeting summarization agent
+**As a** GP  
+**I want** Fireflies transcripts auto-summarized into key points  
+**So that** I don't have to read full transcripts
+
+**Acceptance Criteria:**
+- [ ] LLM prompt created for summarization (extract key discussion points, next steps, sentiment)
+- [ ] Prompt includes: transcript text, meeting participants, organization context
+- [ ] Output structured as JSON: {key_points: [], next_steps: [], sentiment: "High/Medium/Low"}
+- [ ] Sentiment detection based on phrases like "very interested", "concerns about", etc.
+- [ ] Summary stored in interactions table
+- [ ] Tested with 5 sample Fireflies transcripts
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 4.1, 3.1
+
+---
+
+#### Story 4.3: Auto-detect LP meetings from calendar
+**As a** developer  
+**I want to** automatically identify which meetings are with LPs  
+**So that** we know which Fireflies transcripts to summarize
+
+**Acceptance Criteria:**
+- [ ] Google Calendar API integrated (read-only access to shared GP calendars)
+- [ ] Cron job runs daily at 8am PT to fetch yesterday's meetings
+- [ ] Logic: meeting is LP-related if external attendee email matches contacts table
+- [ ] Filter out: internal meetings (all @blackopsvc.com), meetings <20 min
+- [ ] For each LP meeting found: check Fireflies for transcript
+- [ ] If transcript exists: trigger summarization agent
+- [ ] If no transcript: log warning (manual follow-up needed)
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 4.2
+
+---
+
+#### Story 4.4: Display meeting notes in LP profile
+**As a** GP  
+**I want to** see meeting summaries in the LP profile engagement timeline  
+**So that** I can quickly recall past conversations
+
+**Acceptance Criteria:**
+- [ ] Interactions timeline on LP profile page
+- [ ] Each meeting displayed with: date, participants, summary (collapsed by default)
+- [ ] Expand to see full summary with key points and next steps
+- [ ] Sentiment badge (High Interest = green, Medium = yellow, Low = red)
+- [ ] Link to Fireflies recording (opens in new tab)
+- [ ] Sort by date descending (most recent first)
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 2.3, 4.3
+
+---
+
+### Epic 7: Dashboard & Reporting
+
+#### Story 7.1: Build pipeline kanban board
+**As a** GP  
+**I want to** visualize my LP pipeline as a kanban board  
+**So that** I understand where each LP stands
+
+**Acceptance Criteria:**
+- [ ] Columns: Prospect, Outreach, In Discussion, Verbal Interest, Committed, Stalled
+- [ ] Each card shows: org name, primary contact, check size range, days since contact
+- [ ] Drag-and-drop to move LP between stages
+- [ ] Clicking card opens LP profile detail page
+- [ ] Filter by: investor type, priority, tags
+- [ ] Column headers show count and total potential commitment
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 2.1
+
+---
+
+#### Story 7.2: Build "Today's Actions" dashboard panel
+**As a** GP  
+**I want to** see LPs requiring follow-up and upcoming meetings  
+**So that** I know what to prioritize today
+
+**Acceptance Criteria:**
+- [ ] Dashboard home page with sections:
+  - **Follow-Ups Needed:** LPs with days_since_contact > 40 or reminders due within 7 days
+  - **Upcoming Meetings:** Meetings scheduled for next 7 days
+  - **Drafts Pending Review:** Count of email drafts awaiting approval
+- [ ] Each LP listed with: name, stage, days overdue, quick action button
+- [ ] Quick action: "Generate Follow-Up" opens draft modal
+- [ ] Upcoming meetings show: date/time, contact name, meeting context
+- [ ] Empty states with helpful messages
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 7.1, 2.3
+
+---
+
+#### Story 7.3: Implement Sunday weekly digest email
+**As a** GP  
+**I want to** receive a weekly email with upcoming meetings and follow-ups  
+**So that** I can plan my week
+
+**Acceptance Criteria:**
+- [ ] Cron job scheduled for Sunday 7pm PT
+- [ ] Email template designed (HTML with responsive layout)
+- [ ] Content sections:
+  - Upcoming meetings this week (with stage, check size, context)
+  - Follow-ups needed (>40 days or reminders due)
+  - Each follow-up includes draft email if available
+- [ ] Links to LP profiles in dashboard
+- [ ] Sent to james@blackopsvc.com
+- [ ] Preview mode for testing before launch
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 7.2
+
+---
+
+#### Story 7.4: Implement Friday retro email
+**As a** partner  
+**I want to** receive a weekly summary of completed LP meetings  
+**So that** the team stays aligned
+
+**Acceptance Criteria:**
+- [ ] Cron job scheduled for Friday 12pm PT
+- [ ] Email template with sections:
+  - Meetings completed this week (with summaries from Fireflies)
+  - Sentiment indicators for each meeting
+  - Links to full Fireflies recordings
+  - Pipeline snapshot stats (count by stage, total potential commitment)
+- [ ] Sent to partners@blackopsvc.com
+- [ ] Handles weeks with zero meetings gracefully
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 4.4, 7.3
+
+---
+
+### Epic 5: Follow-Up Automation
+
+#### Story 5.1: Implement days_since_contact auto-calculation
+**As a** system  
+**I want to** automatically calculate days since last interaction for each LP  
+**So that** we can identify stale relationships
+
+**Acceptance Criteria:**
+- [ ] Database trigger updates organizations.days_since_contact when new interaction created
+- [ ] Daily cron job recalculates days_since_contact for all orgs at midnight PT
+- [ ] Logic: days_since_contact = NOW() - last_interaction
+- [ ] Handles null last_interaction (shows "Never contacted")
+- [ ] Indexed for fast filtering
+
+**Story Points:** 3  
+**Priority:** Must Have  
+**Dependencies:** 2.1
+
+---
+
+#### Story 5.2: Auto-flag stalled LPs
+**As a** GP  
+**I want** LPs with no contact for >25 days to be flagged as "Stalled"  
+**So that** I know which relationships need re-engagement
+
+**Acceptance Criteria:**
+- [ ] Daily cron job at 1am PT checks all organizations
+- [ ] Logic: if days_since_contact > 25 AND stage NOT IN ('Pass', 'Committed', 'Stalled') → update stage = 'Stalled'
+- [ ] Stalled LPs appear in separate column on kanban board
+- [ ] Notification email sent to James when LP moves to Stalled
+- [ ] Can manually move out of Stalled if re-engaged
+
+**Story Points:** 3  
+**Priority:** Should Have  
+**Dependencies:** 5.1
+
+---
+
+#### Story 5.3: Auto-generate follow-up reminders
+**As a** system  
+**I want to** automatically create follow-up reminders based on stage  
+**So that** GPs don't forget to follow up at the right time
+
+**Acceptance Criteria:**
+- [ ] Trigger runs when new interaction created
+- [ ] Logic:
+  - Stage = Outreach → create reminder for +1 day
+  - Stage = In Discussion → create reminder for +10 days
+  - Stage = Verbal Interest → create reminder for +10 days
+- [ ] Reminder includes draft email pre-generated
+- [ ] User can edit/dismiss reminder before due date
+- [ ] Reminders appear in Sunday weekly digest
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 4.4, 5.2
+
+---
+
+---
+
+## Phase 2: Intelligence & Automation (Weeks 5-8)
+
+**Goal:** Add network mapping, engagement history, and learning capabilities  
+**Target Launch Date:** Week of December 23, 2025
+
+---
+
+### Epic 6: Network Mapping
+
+#### Story 6.1: Build LinkedIn CSV upload interface
+**As a** GP  
+**I want to** upload my LinkedIn connections CSV monthly  
+**So that** the system knows my professional network
+
+**Acceptance Criteria:**
+- [ ] Upload page with drag-and-drop CSV input
+- [ ] CSV parsing with validation (required columns: Name, Email, Company, Position)
+- [ ] Preview table shows parsed data before import
+- [ ] Deduplication logic (skip if email already exists for this GP)
+- [ ] Import progress bar
+- [ ] Success summary: X new connections added, Y existing skipped
+- [ ] last_updated timestamp set on all imported records
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** None
+
+---
+
+#### Story 6.2: Build network connection matching algorithm
+**As a** system  
+**I want to** automatically match GP connections to LP organizations  
+**So that** we can identify warm introduction paths
+
+**Acceptance Criteria:**
+- [ ] Algorithm runs after CSV upload
+- [ ] Matching logic:
+  - Exact match: network_connections.connection_email = contacts.email → 1st degree
+  - Company match: network_connections.connection_company ILIKE '%' || organizations.name || '%' → 1st degree
+- [ ] Store matches in backchannels table with relationship_type = "LinkedIn Connection"
+- [ ] 2nd degree: check if connection's company matches LP org (future enhancement)
+- [ ] Performance: process 2000 connections in <30 seconds
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 6.1
+
+---
+
+#### Story 6.3: Display network connections in LP profile
+**As a** GP  
+**I want to** see which of my connections can introduce me to LP contacts  
+**So that** I can leverage warm intros
+
+**Acceptance Criteria:**
+- [ ] "Your Network" section in LP profile page
+- [ ] List shows: connection name, connection company, relationship type, 1st/2nd degree badge
+- [ ] If 1st degree: "You know [Name] at [Company]"
+- [ ] If 2nd degree: "Your connection [X] knows [Name]"
+- [ ] Quick action: "Request Intro" generates draft email to mutual connection
+- [ ] Empty state if no connections found
+
+**Story Points:** 5  
+**Priority:** Must Have  
+**Dependencies:** 6.2, 2.3
+
+---
+
+#### Story 6.4: Build "Request Intro" email generator
+**As a** GP  
+**I want to** generate an intro request email to my connection  
+**So that** I can easily leverage my network
+
+**Acceptance Criteria:**
+- [ ] "Request Intro" button on network connection card
+- [ ] LLM generates email to mutual connection asking for intro to LP contact
+- [ ] Email includes context: why intro is valuable, what James is working on
+- [ ] Draft saved to email_drafts table with recipient = mutual connection
+- [ ] Follows same review/approval workflow as other drafts
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 6.3, 3.2
+
+---
+
+### Epic 8: Gmail & Calendar Integration
+
+#### Story 8.1: Scan Gmail for LP-related emails
+**As a** system  
+**I want to** automatically detect emails with LP contacts  
+**So that** engagement history is complete
+
+**Acceptance Criteria:**
+- [ ] Gmail API integrated with cos@blackopsvc.com (read scope)
+- [ ] Cron job runs daily at 9am PT
+- [ ] Searches for emails where sender/recipient email matches contacts table
+- [ ] For each matched email:
+  - Create interaction with type = 'Email'
+  - Store email_thread_id for reference
+  - Extract subject as summary
+  - Update organizations.last_interaction if more recent
+- [ ] Deduplication: skip if email_thread_id already exists
+- [ ] Process limit: last 30 days of emails initially, then incremental
+
+**Story Points:** 8  
+**Priority:** Must Have  
+**Dependencies:** 2.2
+
+---
+
+#### Story 8.2: Display email threads in engagement timeline
+**As a** GP  
+**I want to** see email history with LP in profile timeline  
+**So that** I have complete interaction context
+
+**Acceptance Criteria:**
+- [ ] Email interactions appear in timeline with type icon
+- [ ] Shows: date, subject line, participants
+- [ ] Click to expand: show first 200 chars of email body
+- [ ] Link to open full email in Gmail (via gmail_message_id)
+- [ ] Grouped by thread (show count if multiple emails in thread)
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 8.1, 4.4
+
+---
+
+#### Story 8.3: Sync Google Calendar for upcoming meetings
+**As a** system  
+**I want to** automatically populate upcoming meetings from calendars  
+**So that** GPs see LP meetings in dashboard
+
+**Acceptance Criteria:**
+- [ ] Google Calendar API reads shared GP calendars
+- [ ] Daily sync at 6am PT fetches next 7 days of meetings
+- [ ] For meetings with external attendees matching contacts:
+  - Update organizations.upcoming_meeting if within 7 days
+  - Create reminder with type = 'Meeting Prep'
+- [ ] Dashboard shows upcoming meetings with countdown ("in 2 days")
+- [ ] Handles recurring meetings correctly
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 7.2
+
+---
+
+#### Story 8.4: Generate meeting prep briefs
+**As a** GP  
+**I want to** receive a meeting prep summary before each LP call  
+**So that** I'm prepared with context
+
+**Acceptance Criteria:**
+- [ ] For each upcoming meeting (within 24 hours):
+  - LLM generates brief with: org summary, last interaction recap, suggested talking points
+  - Pulls data from: organization profile, last 3 interactions, tags
+- [ ] Brief sent via email 2 hours before meeting
+- [ ] Also visible in dashboard under "Upcoming Meetings"
+- [ ] Includes link to LP profile for full details
+
+**Story Points:** 5  
+**Priority:** Could Have  
+**Dependencies:** 8.3, 4.4
+
+---
+
+### Epic 3: AI Email Generation (Continued)
+
+#### Story 3.5: Implement draft learning from edits
+**As a** system  
+**I want to** track how James edits AI-generated drafts  
+**So that** future drafts improve over time
+
+**Acceptance Criteria:**
+- [ ] When draft status changes to 'Edited':
+  - Store original version and edited version in edit_history JSONB
+  - Track which parts changed (subject vs body, specific phrases)
+- [ ] Monthly analysis job:
+  - Identify common edit patterns (e.g., always removes certain phrases)
+  - Generate report for prompt tuning
+- [ ] Acceptance rate metric: % of drafts approved without edits
+- [ ] Goal: increase acceptance rate from baseline to >60% within 60 days
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 3.3
+
+---
+
+#### Story 3.6: Build bulk draft approval interface
+**As a** GP  
+**I want to** review and approve multiple drafts at once  
+**So that** I save time on weekly follow-ups
+
+**Acceptance Criteria:**
+- [ ] Drafts list has checkboxes for multi-select
+- [ ] Bulk actions dropdown: "Approve All", "Schedule All", "Dismiss All"
+- [ ] Schedule all opens single date/time picker applied to all selected
+- [ ] Confirmation dialog shows count of drafts affected
+- [ ] Status updates applied to all selected drafts atomically
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 3.3
+
+---
+
+### Epic 2: LP Data Management (Continued)
+
+#### Story 2.5: Build manual interaction logging
+**As a** GP  
+**I want to** manually log interactions that weren't auto-detected  
+**So that** my engagement history is complete
+
+**Acceptance Criteria:**
+- [ ] "Log Interaction" button on LP profile
+- [ ] Form with fields: type (email/call/meeting/other), date, participants, summary, next action
+- [ ] Participants dropdown populated from contacts at this organization
+- [ ] On save: creates interaction record, updates last_interaction timestamp
+- [ ] Optional: attach Fireflies URL or email thread ID manually
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 2.3
+
+---
+
+#### Story 2.6: Build reminders management interface
+**As a** GP  
+**I want to** create, edit, and dismiss custom reminders  
+**So that** I can set follow-ups for non-standard timing
+
+**Acceptance Criteria:**
+- [ ] "Set Reminder" button on LP profile
+- [ ] Form: date, reminder type, custom message
+- [ ] Option to generate draft email for this reminder
+- [ ] Reminders list on LP profile showing all pending/completed
+- [ ] Mark reminder as completed manually
+- [ ] Edit reminder date before it's due
+- [ ] Dismiss reminder if no longer needed
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 2.3
+
+---
+
+---
+
+## Phase 3: Advanced Features (Weeks 9-12)
+
+**Goal:** Analytics, multi-partner support, and polish  
+**Target Launch Date:** Week of January 20, 2026
+
+---
+
+### Epic 7: Dashboard & Reporting (Continued)
+
+#### Story 7.5: Build fundraising analytics dashboard
+**As a** GP  
+**I want to** visualize fundraising progress and pipeline health  
+**So that** I understand if we're on track for first close
+
+**Acceptance Criteria:**
+- [ ] Analytics page with charts:
+  - Pipeline snapshot (count and $ by stage)
+  - Committed capital vs. target (progress bar)
+  - LP diversification (pie chart by investor type)
+  - Geographic distribution (map or bar chart)
+  - Engagement velocity (avg days in each stage)
+- [ ] Date range filter (last 30/60/90 days)
+- [ ] Export to PDF for board reporting
+
+**Story Points:** 13  
+**Priority:** Should Have  
+**Dependencies:** 7.1
+
+---
+
+#### Story 7.6: Build LP engagement heatmap
+**As a** GP  
+**I want to** see interaction frequency over time  
+**So that** I identify which months I'm most/least active
+
+**Acceptance Criteria:**
+- [ ] Calendar heatmap showing interactions per day (last 6 months)
+- [ ] Color intensity = number of interactions (light to dark green)
+- [ ] Click day to see list of interactions
+- [ ] Filter by interaction type (emails vs meetings)
+- [ ] Goal: identify patterns (e.g., slow months to increase activity)
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 7.5
+
+---
+
+#### Story 7.7: Build LP segmentation views
+**As a** GP  
+**I want to** filter pipeline by custom segments  
+**So that** I can focus on specific LP cohorts
+
+**Acceptance Criteria:**
+- [ ] Saved filters/segments:
+  - "Diverse Managers" (tags include 'diverse managers')
+  - "Large Check (>$1M)"
+  - "Family Offices Only"
+  - "Stalled This Quarter"
+- [ ] Custom segment builder (UI for AND/OR filter logic)
+- [ ] Apply segment to kanban board or table view
+- [ ] Export segment to CSV
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 7.1
+
+---
+
+### Epic 9: Multi-Partner Support
+
+#### Story 9.1: Add partner assignment to organizations
+**As an** admin  
+**I want to** assign LPs to different partners  
+**So that** ownership is clear
+
+**Acceptance Criteria:**
+- [ ] Owner dropdown on organization form (populated from users table)
+- [ ] Default owner = current logged-in user
+- [ ] Filter kanban board by owner
+- [ ] "My LPs" vs "All LPs" toggle on dashboard
+- [ ] RLS policy: partners can only edit their own LPs (unless admin)
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 2.1
+
+---
+
+#### Story 9.2: Build partner-specific follow-up queues
+**As a** partner  
+**I want to** see only my LPs requiring follow-up  
+**So that** I focus on my pipeline
+
+**Acceptance Criteria:**
+- [ ] Dashboard "Today's Actions" filtered by owner_id = current user
+- [ ] "My Follow-Ups" vs "Team Follow-Ups" tabs
+- [ ] Sunday digest optionally includes only assigned LPs (configurable per user)
+- [ ] Admin view shows all partners' pipelines
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 9.1, 7.2
+
+---
+
+#### Story 9.3: Enable partner network uploads
+**As a** partner  
+**I want to** upload my own LinkedIn connections  
+**So that** my network is also mapped
+
+**Acceptance Criteria:**
+- [ ] Each partner can upload their own connections CSV
+- [ ] gp_email field identifies which partner owns connections
+- [ ] Network matching considers all partners' connections
+- [ ] LP profile shows: "Your network" (current user) + "Team network" (other partners)
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** 6.1, 9.1
+
+---
+
+### Epic 10: Performance & Polish
+
+#### Story 10.1: Optimize database queries for speed
+**As a** developer  
+**I want to** ensure all dashboard queries run in <500ms  
+**So that** user experience is snappy
+
+**Acceptance Criteria:**
+- [ ] Database query performance profiling completed
+- [ ] Slow queries identified (>500ms) and optimized
+- [ ] Missing indexes added based on query patterns
+- [ ] Connection pooling configured (max 10 connections)
+- [ ] Caching layer added for frequently accessed data (Redis or Supabase cache)
+
+**Story Points:** 8  
+**Priority:** Should Have  
+**Dependencies:** None
+
+---
+
+#### Story 10.2: Implement error monitoring and alerting
+**As a** developer  
+**I want to** be notified when errors occur in production  
+**So that** we can fix issues quickly
+
+**Acceptance Criteria:**
+- [ ] Sentry integrated for frontend error tracking
+- [ ] Backend errors logged to Supabase logs
+- [ ] Slack webhook for critical errors (e.g., email send failures, LLM API down)
+- [ ] Weekly error summary email
+- [ ] Uptime monitoring for dashboard (e.g., UptimeRobot)
+
+**Story Points:** 5  
+**Priority:** Should Have  
+**Dependencies:** None
+
+---
+
+#### Story 10.3: Build mobile-responsive views
+**As a** GP  
+**I want to** access dashboard on my phone  
+**So that** I can review LPs on-the-go
+
+**Acceptance Criteria:**
+- [ ] All pages responsive (tested on iOS Safari and Chrome)
+- [ ] Mobile nav menu (hamburger icon)
+- [ ] Touch-friendly buttons (min 44x44px)
+- [ ] Kanban board horizontal scroll on mobile
+- [ ] Forms adapt to mobile (stacked fields)
+
+**Story Points:** 8  
+**Priority:** Should Have  
+**Dependencies:** None
+
+---
+
+#### Story 10.4: Create onboarding documentation
+**As a** new user  
+**I want** clear instructions on how to use CoSA  
+**So that** I can get started quickly
+
+**Acceptance Criteria:**
+- [ ] Welcome modal on first login with product tour
+- [ ] Help docs site (Notion or GitHub Pages)
+- [ ] Topics covered:
+  - How to add LP organizations
+  - How to upload LinkedIn connections
+  - How to review and approve email drafts
+  - How to interpret weekly digests
+- [ ] Video walkthrough (5-10 minutes)
+- [ ] In-app tooltips for key features
+
+**Story Points:** 8  
+**Priority:** Should Have  
+**Dependencies:** None
+
+---
+
+### Epic 11: Advanced AI Features
+
+#### Story 11.1: Implement LP fit scoring
+**As a** GP  
+**I want to** see AI-generated fit scores for each LP  
+**So that** I prioritize high-alignment prospects
+
+**Acceptance Criteria:**
+- [ ] Fit scoring algorithm implemented (see PRD scoring rubric)
+- [ ] Factors: check size match (40pts), thesis alignment (30pts), DEI focus (20pts), recent activity (10pts)
+- [ ] Exclusion: healthcare-only focus = 0 score
+- [ ] Fit score (0-100) displayed on LP profile and kanban cards
+- [ ] Color coding: 80-100 = green, 60-79 = yellow, <60 = red
+- [ ] Sort/filter LPs by fit score
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 2.1
+
+---
+
+#### Story 11.2: Build semantic search for LP profiles
+**As a** GP  
+**I want to** search LPs by concept (e.g., "impact-focused foundations")  
+**So that** I find relevant LPs beyond keyword matching
+
+**Acceptance Criteria:**
+- [ ] Organization profiles embedded into vector store on create/update
+- [ ] Search bar with semantic search option
+- [ ] Query embedded and compared to org embeddings (cosine similarity)
+- [ ] Results ranked by similarity score
+- [ ] Works for queries like: "LPs interested in DEI", "foundations in education space"
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 1.4
+
+---
+
+#### Story 11.3: Generate LP one-pagers automatically
+**As a** GP  
+**I want to** export a one-page summary of an LP  
+**So that** I can share context with partners
+
+**Acceptance Criteria:**
+- [ ] "Export One-Pager" button on LP profile
+- [ ] LLM generates PDF with:
+  - Organization overview
+  - Investment thesis and mandate
+  - Key contacts
+  - Engagement history highlights
+  - Network connections
+  - Next steps
+- [ ] Branded template (Black Ops VC logo/colors)
+- [ ] Download as PDF
+
+**Story Points:** 8  
+**Priority:** Could Have  
+**Dependencies:** 2.3
+
+---
+
+---
+
+## Icebox (Future Considerations)
+
+### Features Deferred to Phase 4+
+
+#### Icebox 1: Voice interface
+**As a** GP  
+**I want to** ask CoSA questions via voice  
+**So that** I can get info while driving or multitasking
+
+**Story Points:** 13  
+**Dependencies:** Whisper API, voice UI framework
+
+---
+
+#### Icebox 2: Investor sentiment tracking over time
+**As a** GP  
+**I want to** see how LP interest changes across interactions  
+**So that** I understand if relationship is warming or cooling
+
+**Story Points:** 8  
+**Dependencies:** 4.4 (sentiment already captured)
+
+---
+
+#### Icebox 3: Side letter management
+**As a** fund admin  
+**I want to** track custom LP terms and side letters  
+**So that** we stay compliant
+
+**Story Points:** 13  
+**Dependencies:** New table for side_letters
+
+---
+
+#### Icebox 4: Wire reconciliation
+**As a** fund admin  
+**I want to** match incoming wires to LP commitments  
+**So that** accounting is automated
+
+**Story Points:** 13  
+**Dependencies:** Bank API integration
+
+---
+
+#### Icebox 5: LP co-investment portal
+**As an** LP  
+**I want to** opt into deals via self-service portal  
+**So that** I don't miss opportunities
+
+**Story Points:** 21  
+**Dependencies:** Public-facing portal, auth for LPs
+
+---
+
+#### Icebox 6: Auto-generate quarterly LP updates
+**As a** GP  
+**I want** AI to draft quarterly newsletter to LPs  
+**So that** I save time on reporting
+
+**Story Points:** 8  
+**Dependencies:** Portfolio performance data
+
+---
+
+---
+
+## Technical Debt & Maintenance
+
+### Technical Debt Stories
+
+#### Tech Debt 1: Refactor email drafting to use streaming
+**As a** developer  
+**I want to** stream LLM responses in real-time  
+**So that** users see drafts being generated (better UX)
+
+**Story Points:** 5  
+**Priority:** Could Have
+
+---
+
+#### Tech Debt 2: Add comprehensive unit tests
+**As a** developer  
+**I want** >80% test coverage on critical paths  
+**So that** we catch regressions early
+
+**Story Points:** 13  
+**Priority:** Should Have
+
+---
+
+#### Tech Debt 3: Set up CI/CD pipeline
+**As a** developer  
+**I want** automated tests to run on every PR  
+**So that** we maintain code quality
+
+**Story Points:** 5  
+**Priority:** Should Have
+
+---
+
+#### Tech Debt 4: Migrate to TypeScript
+**As a** developer  
+**I want** type safety across the codebase  
+**So that** we catch errors at compile time
+
+**Story Points:** 21  
+**Priority:** Could Have
+
+---
+
+### Maintenance Stories
+
+#### Maintenance 1: Monthly LinkedIn connection refresh
+**Frequency:** Monthly  
+**Effort:** 1 hour  
+**Owner:** James  
+**Task:** Download LinkedIn connections CSV and upload to CoSA
+
+---
+
+#### Maintenance 2: Review and tune LLM prompts
+**Frequency:** Monthly  
+**Effort:** 2 hours  
+**Owner:** Dev team  
+**Task:** Analyze draft acceptance rates, update prompts based on edit patterns
+
+---
+
+#### Maintenance 3: Database backup verification
+**Frequency:** Weekly  
+**Effort:** 15 minutes  
+**Owner:** Dev team  
+**Task:** Verify Supabase backups are running successfully
+
+---
+
+#### Maintenance 4: Cost monitoring
+**Frequency:** Weekly  
+**Effort:** 10 minutes  
+**Owner:** Dev team  
+**Task:** Check Replicate API costs, ensure <$150/month
+
+---
+
+---
+
+## Sprint Planning Template
+
+### Sprint Structure (2-week sprints)
+
+**Sprint Capacity:** 80 story points (2 developers × 40 hours/week × 2 weeks ÷ 2 points/hour)
+
+**Sprint Goals:**
+- Sprint 1 (Weeks 1-2): Foundation + basic CRUD (Stories 1.1-1.4, 2.1-2.3)
+- Sprint 2 (Weeks 3-4): AI email + meeting intelligence (Stories 3.1-3.4, 4.1-4.4)
+- Sprint 3 (Weeks 5-6): Network mapping + Gmail integration (Stories 6.1-6.4, 8.1-8.3)
+- Sprint 4 (Weeks 7-8): Follow-up automation + polish (Stories 5.1-5.3, 3.5-3.6, 10.1-10.2)
+- Sprint 5 (Weeks 9-10): Analytics + multi-partner (Stories 7.5-7.7, 9.1-9.3)
+- Sprint 6 (Weeks 11-12): Advanced AI + final polish (Stories 11.1-11.3, 10.3-10.4)
+
+---
+
+## Acceptance Tracking
+
+### Story Status Legend
+- 🔴 **Not Started:** Story in backlog
+- 🟡 **In Progress:** Story actively being worked
+- 🟢 **Complete:** Story meets definition of done
+- ⏸️ **Blocked:** Story blocked by dependency or external factor
+
+### MVP Completion Tracker (Phase 1)
+
+| Epic | Stories Complete | Total Stories | % Complete |
+|------|------------------|---------------|------------|
+| Epic 1: Foundation | 0/4 | 4 | 0% |
+| Epic 2: LP Data | 0/4 | 4 | 0% |
+| Epic 3: AI Email | 0/4 | 4 | 0% |
+| Epic 4: Meeting Intel | 0/4 | 4 | 0% |
+| Epic 5: Follow-Up | 0/3 | 3 | 0% |
+| Epic 7: Dashboard | 0/4 | 4 | 0% |
+| **TOTAL MVP** | **0/23** | **23** | **0%** |
+
+---
+
+## Change Log
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | Oct 30, 2025 | Initial backlog created |
+
+---
