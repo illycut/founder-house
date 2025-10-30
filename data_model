@@ -1,0 +1,1137 @@
+# 📊 Black Ops CoSA - Data Model Specification
+
+**Version:** 1.0  
+**Last Updated:** October 30, 2025  
+**Database:** Supabase PostgreSQL with pgvector extension
+
+---
+
+## Table of Contents
+1. [Schema Overview](#schema-overview)
+2. [Table Definitions](#table-definitions)
+3. [Relationships Diagram](#relationships-diagram)
+4. [Indexes & Performance](#indexes--performance)
+5. [Row Level Security (RLS) Policies](#row-level-security-rls-policies)
+6. [Computed Fields & Triggers](#computed-fields--triggers)
+7. [Migration Scripts](#migration-scripts)
+
+---
+
+## Schema Overview
+
+### Entity Relationship Summary
+- **Organizations** (LP firms) have many **Contacts** (people at those firms)
+- **Organizations** have many **Interactions** (meetings, emails, calls)
+- **Contacts** can have many **Backchannels** (relationships to other contacts)
+- **Organizations** have many **Reminders** (follow-up tasks)
+- **Interactions** reference multiple **Contacts** (participants)
+- **Network Connections** map GP relationships to potential LP contacts
+- **Users** table manages GP authentication and permissions
+
+---
+
+## Table Definitions
+
+### 1. `users`
+**Purpose:** Authentication and user management for GPs accessing the system
+
+```sql
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'partner', -- 'admin', 'partner', 'analyst'
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_users_email ON users(email);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique user identifier |
+| `email` | TEXT | UNIQUE, NOT NULL | User email (e.g., james@blackopsvc.com) |
+| `full_name` | TEXT | NOT NULL | Display name |
+| `role` | TEXT | NOT NULL | Access level: admin/partner/analyst |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Account creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+---
+
+### 2. `organizations`
+**Purpose:** LP firms and institutions being tracked for fundraising
+
+```sql
+CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  owner_id UUID REFERENCES users(id),
+  priority TEXT CHECK (priority IN ('High', 'Medium', 'Low')),
+  stage TEXT NOT NULL CHECK (stage IN (
+    'Prospect', 'Outreach', 'In Discussion', 
+    'Verbal Interest', 'Committed', 'Stalled', 'Pass'
+  )),
+  investor_type TEXT CHECK (investor_type IN (
+    'Family Office', 'Foundation', 'Endowment', 'Pension'
+  )),
+  check_size_min INTEGER, -- in thousands (e.g., 500 = $500K)
+  check_size_max INTEGER,
+  thesis TEXT, -- Investment focus/mandate
+  fund_size INTEGER, -- Total AUM in millions
+  location TEXT,
+  upcoming_meeting TIMESTAMP WITH TIME ZONE,
+  last_interaction TIMESTAMP WITH TIME ZONE,
+  days_since_contact INTEGER, -- Computed field
+  tags TEXT[], -- Array of tags like ["diverse managers", "black equity"]
+  misc_notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_organizations_stage ON organizations(stage);
+CREATE INDEX idx_organizations_owner ON organizations(owner_id);
+CREATE INDEX idx_organizations_priority ON organizations(priority);
+CREATE INDEX idx_organizations_days_since_contact ON organizations(days_since_contact);
+CREATE INDEX idx_organizations_tags ON organizations USING GIN(tags);
+CREATE INDEX idx_organizations_investor_type ON organizations(investor_type);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique organization identifier |
+| `name` | TEXT | NOT NULL | Organization name (e.g., "Hamilton Family Office") |
+| `owner_id` | UUID | FOREIGN KEY → users | GP responsible for relationship |
+| `priority` | TEXT | ENUM | High/Medium/Low priority flag |
+| `stage` | TEXT | ENUM, NOT NULL | Pipeline stage |
+| `investor_type` | TEXT | ENUM | Type of LP institution |
+| `check_size_min` | INTEGER | | Minimum check size in thousands (e.g., 500 = $500K) |
+| `check_size_max` | INTEGER | | Maximum check size in thousands |
+| `thesis` | TEXT | | Investment focus areas/mandate |
+| `fund_size` | INTEGER | | Total AUM in millions |
+| `location` | TEXT | | Geographic location |
+| `upcoming_meeting` | TIMESTAMP | | Next scheduled meeting date |
+| `last_interaction` | TIMESTAMP | | Most recent contact date (auto-updated) |
+| `days_since_contact` | INTEGER | | Days since last_interaction (auto-computed) |
+| `tags` | TEXT[] | | Searchable tags for segmentation |
+| `misc_notes` | TEXT | | Unstructured notes field |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- `check_size_min` ≤ `check_size_max` (enforced by application logic)
+- `days_since_contact` auto-computed daily via trigger
+- `last_interaction` auto-updated when new Interaction is created
+- Moving to "Stalled" stage auto-triggers when `days_since_contact` > 25
+
+---
+
+### 3. `contacts`
+**Purpose:** Individual people at LP organizations
+
+```sql
+CREATE TABLE contacts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT UNIQUE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  position TEXT, -- Job title
+  location TEXT,
+  timezone TEXT, -- e.g., "America/Los_Angeles"
+  linkedin_url TEXT,
+  image_url TEXT, -- Profile photo URL
+  top_of_mind TEXT, -- AI-generated context summary
+  misc_notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_contacts_organization ON contacts(organization_id);
+CREATE INDEX idx_contacts_email ON contacts(email);
+CREATE INDEX idx_contacts_name ON contacts(first_name, last_name);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique contact identifier |
+| `first_name` | TEXT | NOT NULL | Contact first name |
+| `last_name` | TEXT | NOT NULL | Contact last name |
+| `email` | TEXT | UNIQUE | Email address (used for Gmail/Calendar matching) |
+| `organization_id` | UUID | FOREIGN KEY → organizations | Associated LP organization |
+| `position` | TEXT | | Job title (e.g., "Managing Partner") |
+| `location` | TEXT | | City/region |
+| `timezone` | TEXT | | IANA timezone for scheduling |
+| `linkedin_url` | TEXT | | LinkedIn profile URL |
+| `image_url` | TEXT | | Profile photo URL |
+| `top_of_mind` | TEXT | | AI-generated summary of recent context |
+| `misc_notes` | TEXT | | Unstructured notes |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- Deleting an organization cascades to delete contacts
+- Email should be unique for matching against Gmail/Calendar APIs
+- `top_of_mind` refreshed weekly by AI agent based on recent interactions
+
+---
+
+### 4. `backchannels`
+**Purpose:** Relationship mapping between contacts (who knows whom)
+
+```sql
+CREATE TABLE backchannels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  backchannel_contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  relationship_type TEXT, -- e.g., "former colleague", "mutual friend"
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(contact_id, backchannel_contact_id)
+);
+
+-- Indexes
+CREATE INDEX idx_backchannels_contact ON backchannels(contact_id);
+CREATE INDEX idx_backchannels_backchannel ON backchannels(backchannel_contact_id);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique backchannel identifier |
+| `contact_id` | UUID | FOREIGN KEY → contacts | Primary contact (LP person) |
+| `backchannel_contact_id` | UUID | FOREIGN KEY → contacts | Person who knows primary contact |
+| `relationship_type` | TEXT | | Nature of relationship |
+| `notes` | TEXT | | Additional context |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- Unique constraint prevents duplicate relationships
+- Bidirectional relationships can be represented by two rows
+- Deleting a contact cascades to delete associated backchannels
+
+---
+
+### 5. `interactions`
+**Purpose:** Track all touchpoints with LP organizations (emails, calls, meetings)
+
+```sql
+CREATE TABLE interactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  interaction_type TEXT NOT NULL CHECK (interaction_type IN (
+    'Email', 'Call', 'Meeting', 'Deck View', 'Other'
+  )),
+  date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  summary TEXT, -- AI-generated or manual summary
+  participants UUID[], -- Array of contact_ids who were involved
+  fireflies_url TEXT, -- Link to Fireflies recording
+  email_thread_id TEXT, -- Gmail thread ID
+  next_action TEXT, -- Suggested next step
+  next_action_date DATE, -- When to follow up
+  ai_generated BOOLEAN DEFAULT FALSE, -- Track if summary was AI-generated
+  sentiment TEXT CHECK (sentiment IN ('High Interest', 'Medium Interest', 'Low Interest', 'Neutral')),
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_interactions_organization ON interactions(organization_id);
+CREATE INDEX idx_interactions_date ON interactions(date DESC);
+CREATE INDEX idx_interactions_type ON interactions(interaction_type);
+CREATE INDEX idx_interactions_next_action_date ON interactions(next_action_date);
+CREATE INDEX idx_interactions_participants ON interactions USING GIN(participants);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique interaction identifier |
+| `organization_id` | UUID | FOREIGN KEY → organizations | Associated LP organization |
+| `interaction_type` | TEXT | ENUM, NOT NULL | Type of touchpoint |
+| `date` | TIMESTAMP | NOT NULL | When interaction occurred |
+| `summary` | TEXT | | Key points from interaction |
+| `participants` | UUID[] | | Array of contact IDs involved |
+| `fireflies_url` | TEXT | | Link to call recording |
+| `email_thread_id` | TEXT | | Gmail thread ID for reference |
+| `next_action` | TEXT | | Suggested follow-up action |
+| `next_action_date` | DATE | | Target date for next action |
+| `ai_generated` | BOOLEAN | DEFAULT FALSE | Audit flag for AI summaries |
+| `sentiment` | TEXT | ENUM | Perceived LP interest level |
+| `created_by` | UUID | FOREIGN KEY → users | User who logged interaction |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- Creating a new interaction updates `organizations.last_interaction`
+- `participants` array validated against `contacts` table
+- Sentiment auto-detected by AI from Fireflies transcripts or email tone
+
+---
+
+### 6. `reminders`
+**Purpose:** Follow-up tasks and scheduled actions for LP engagement
+
+```sql
+CREATE TABLE reminders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  reminder_date DATE NOT NULL,
+  reminder_type TEXT NOT NULL CHECK (reminder_type IN (
+    'Follow-up', 'Meeting Prep', 'Check-in', 'Custom'
+  )),
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (
+    'Pending', 'Completed', 'Dismissed'
+  )),
+  draft_email TEXT, -- AI-generated email draft
+  draft_approved BOOLEAN DEFAULT FALSE,
+  scheduled_send_time TIMESTAMP WITH TIME ZONE, -- When to send approved draft
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_reminders_organization ON reminders(organization_id);
+CREATE INDEX idx_reminders_date ON reminders(reminder_date);
+CREATE INDEX idx_reminders_status ON reminders(status);
+CREATE INDEX idx_reminders_scheduled_send ON reminders(scheduled_send_time);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique reminder identifier |
+| `organization_id` | UUID | FOREIGN KEY → organizations | Associated LP organization |
+| `reminder_date` | DATE | NOT NULL | When reminder is due |
+| `reminder_type` | TEXT | ENUM, NOT NULL | Type of reminder |
+| `message` | TEXT | | Reminder note/context |
+| `status` | TEXT | ENUM, NOT NULL | Current state |
+| `draft_email` | TEXT | | AI-generated email content |
+| `draft_approved` | BOOLEAN | DEFAULT FALSE | Has James approved the draft? |
+| `scheduled_send_time` | TIMESTAMP | | Scheduled email send time |
+| `created_by` | UUID | FOREIGN KEY → users | User who created reminder |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- Reminders with `status = 'Pending'` appear in weekly digests
+- Approving a draft sets `draft_approved = TRUE` and populates `scheduled_send_time`
+- Completing a reminder updates `status = 'Completed'`
+- Cron job checks `scheduled_send_time` and sends emails via Gmail API
+
+---
+
+### 7. `network_connections`
+**Purpose:** Map GP professional networks to enable warm intro discovery
+
+```sql
+CREATE TABLE network_connections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  gp_email TEXT NOT NULL, -- Which GP's network (e.g., james@blackopsvc.com)
+  connection_name TEXT NOT NULL,
+  connection_email TEXT,
+  connection_linkedin TEXT,
+  connection_company TEXT,
+  connection_position TEXT,
+  relationship_strength TEXT CHECK (relationship_strength IN (
+    '1st Degree', '2nd Degree'
+  )),
+  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_network_gp ON network_connections(gp_email);
+CREATE INDEX idx_network_company ON network_connections(connection_company);
+CREATE INDEX idx_network_email ON network_connections(connection_email);
+CREATE INDEX idx_network_linkedin ON network_connections(connection_linkedin);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique connection identifier |
+| `gp_email` | TEXT | NOT NULL | GP who owns this connection |
+| `connection_name` | TEXT | NOT NULL | Name of professional contact |
+| `connection_email` | TEXT | | Email address |
+| `connection_linkedin` | TEXT | | LinkedIn profile URL |
+| `connection_company` | TEXT | | Current employer |
+| `connection_position` | TEXT | | Job title |
+| `relationship_strength` | TEXT | ENUM | 1st or 2nd degree connection |
+| `last_updated` | TIMESTAMP | DEFAULT NOW() | Last CSV upload date |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Record creation timestamp |
+
+**Business Rules:**
+- Monthly CSV upload refreshes this table (upsert logic)
+- Agent matches `connection_company` against `organizations.name` to find warm paths
+- Agent matches `connection_email` against `contacts.email` to find direct connections
+- Deduplication logic: same person across multiple GP networks stored once per GP
+
+---
+
+### 8. `email_drafts`
+**Purpose:** Store AI-generated email drafts for review and tracking
+
+```sql
+CREATE TABLE email_drafts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  recipient_contact_id UUID REFERENCES contacts(id),
+  subject TEXT,
+  body TEXT NOT NULL,
+  draft_type TEXT CHECK (draft_type IN (
+    'Follow-up', 'Introduction', 'Check-in', 'Re-engagement', 'Custom'
+  )),
+  status TEXT NOT NULL DEFAULT 'Pending Review' CHECK (status IN (
+    'Pending Review', 'Approved', 'Edited', 'Sent', 'Dismissed'
+  )),
+  scheduled_send_time TIMESTAMP WITH TIME ZONE,
+  sent_at TIMESTAMP WITH TIME ZONE,
+  gmail_message_id TEXT, -- Gmail API message ID after sending
+  edit_history JSONB, -- Track revisions for learning
+  created_by_agent BOOLEAN DEFAULT TRUE,
+  reviewed_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_email_drafts_organization ON email_drafts(organization_id);
+CREATE INDEX idx_email_drafts_status ON email_drafts(status);
+CREATE INDEX idx_email_drafts_scheduled ON email_drafts(scheduled_send_time);
+CREATE INDEX idx_email_drafts_recipient ON email_drafts(recipient_contact_id);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique draft identifier |
+| `organization_id` | UUID | FOREIGN KEY → organizations | Associated LP organization |
+| `recipient_contact_id` | UUID | FOREIGN KEY → contacts | Primary recipient |
+| `subject` | TEXT | | Email subject line |
+| `body` | TEXT | NOT NULL | Email body content |
+| `draft_type` | TEXT | ENUM | Category of email |
+| `status` | TEXT | ENUM, NOT NULL | Draft lifecycle state |
+| `scheduled_send_time` | TIMESTAMP | | When to send (if approved) |
+| `sent_at` | TIMESTAMP | | Actual send timestamp |
+| `gmail_message_id` | TEXT | | Gmail API reference |
+| `edit_history` | JSONB | | Array of revisions for learning |
+| `created_by_agent` | BOOLEAN | DEFAULT TRUE | Was this AI-generated? |
+| `reviewed_by` | UUID | FOREIGN KEY → users | Who approved/edited |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Draft creation timestamp |
+| `updated_at` | TIMESTAMP | DEFAULT NOW() | Last update timestamp |
+
+**Business Rules:**
+- Approving a draft moves status to 'Approved' and sets `scheduled_send_time`
+- Editing a draft appends to `edit_history` JSON: `[{timestamp, original, edited}]`
+- Sending a draft via Gmail API updates `status = 'Sent'` and stores `gmail_message_id`
+- Cron job checks `scheduled_send_time` and triggers email send
+
+---
+
+### 9. `embeddings`
+**Purpose:** Vector embeddings for semantic search and LP intelligence (pgvector)
+
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE embeddings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'organization_profile', 'contact_note', 'interaction_summary', 'email_thread'
+  )),
+  content_id UUID NOT NULL, -- References ID from source table
+  content_text TEXT NOT NULL, -- Original text that was embedded
+  embedding VECTOR(1536), -- OpenAI ada-002 or MiniLM dimensions
+  metadata JSONB, -- Flexible metadata storage
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes
+CREATE INDEX idx_embeddings_content_type ON embeddings(content_type);
+CREATE INDEX idx_embeddings_content_id ON embeddings(content_id);
+CREATE INDEX idx_embeddings_vector ON embeddings USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+```
+
+**Fields:**
+| Field | Type | Constraints | Description |
+|-------|------|-------------|-------------|
+| `id` | UUID | PRIMARY KEY | Unique embedding identifier |
+| `content_type` | TEXT | ENUM, NOT NULL | Type of content embedded |
+| `content_id` | UUID | NOT NULL | ID from source table (org/contact/interaction) |
+| `content_text` | TEXT | NOT NULL | Original text before embedding |
+| `embedding` | VECTOR(1536) | | Vector representation |
+| `metadata` | JSONB | | Flexible metadata (e.g., {timestamp, author}) |
+| `created_at` | TIMESTAMP | DEFAULT NOW() | Embedding creation timestamp |
+
+**Business Rules:**
+- Embeddings generated asynchronously after content creation/update
+- Used for semantic search: "Find LPs similar to Acme Foundation"
+- Used for context retrieval: "What have we discussed with this LP about DEI?"
+- Vector dimension matches embedding model (1536 for ada-002, 384 for MiniLM)
+
+---
+
+## Relationships Diagram
+
+```
+┌─────────────┐
+│   users     │
+└──────┬──────┘
+       │
+       │ owner_id
+       │
+┌──────▼──────────────────┐         ┌──────────────────┐
+│   organizations         │◄────────│  reminders       │
+│                         │         │                  │
+│  - name                 │         │  - reminder_date │
+│  - stage                │         │  - draft_email   │
+│  - investor_type        │         │  - status        │
+│  - check_size_min/max   │         └──────────────────┘
+│  - days_since_contact   │
+└──────┬──────────────────┘
+       │
+       │ organization_id
+       │
+       ├──────────────────────┬──────────────────────┐
+       │                      │                      │
+┌──────▼──────────┐  ┌────────▼──────────┐  ┌───────▼──────────┐
+│   contacts      │  │  interactions      │  │  email_drafts    │
+│                 │  │                    │  │                  │
+│  - first_name   │  │  - type            │  │  - body          │
+│  - last_name    │  │  - date            │  │  - status        │
+│  - email        │  │  - summary         │  │  - scheduled_at  │
+│  - linkedin_url │  │  - participants[]  │  └──────────────────┘
+└──────┬──────────┘  │  - sentiment       │
+       │             └────────────────────┘
+       │
+       │ contact_id
+       │
+┌──────▼──────────────┐
+│   backchannels      │
+│                     │
+│  - contact_id       │
+│  - backchannel_id   │
+│  - relationship     │
+└─────────────────────┘
+
+
+┌──────────────────────┐         ┌─────────────────┐
+│ network_connections  │         │   embeddings    │
+│                      │         │                 │
+│  - gp_email          │         │  - content_type │
+│  - connection_name   │         │  - content_id   │
+│  - connection_company│         │  - embedding    │
+│  - relationship_str  │         │  - metadata     │
+└──────────────────────┘         └─────────────────┘
+```
+
+**Key Relationships:**
+- `users` → `organizations` (one-to-many: owner_id)
+- `organizations` → `contacts` (one-to-many: organization_id)
+- `organizations` → `interactions` (one-to-many: organization_id)
+- `organizations` → `reminders` (one-to-many: organization_id)
+- `organizations` → `email_drafts` (one-to-many: organization_id)
+- `contacts` → `backchannels` (many-to-many: self-referential)
+- `contacts` → `interactions` (many-to-many: participants array)
+- `network_connections` → standalone (matched by name/email/company)
+- `embeddings` → references any content via `content_id` + `content_type`
+
+---
+
+## Indexes & Performance
+
+### Query Optimization Strategy
+
+**Most Common Queries:**
+1. "Get all LPs requiring follow-up (>40 days or reminders due)"
+2. "Get upcoming meetings this week"
+3. "Search LPs by tag/stage/investor_type"
+4. "Find network connections to specific organization"
+5. "Get interaction history for LP profile view"
+
+**Index Coverage:**
+
+```sql
+-- Dashboard: LPs needing follow-up
+-- Uses: idx_organizations_days_since_contact, idx_reminders_date
+SELECT o.*, r.reminder_date, r.draft_email
+FROM organizations o
+LEFT JOIN reminders r ON o.id = r.organization_id
+WHERE o.days_since_contact > 40 OR r.reminder_date <= CURRENT_DATE + 7
+ORDER BY o.priority DESC, o.days_since_contact DESC;
+
+-- Dashboard: Upcoming meetings
+-- Uses: idx_organizations_upcoming_meeting
+SELECT * FROM organizations
+WHERE upcoming_meeting BETWEEN NOW() AND NOW() + INTERVAL '7 days'
+ORDER BY upcoming_meeting ASC;
+
+-- LP Profile: Interaction timeline
+-- Uses: idx_interactions_organization, idx_interactions_date
+SELECT * FROM interactions
+WHERE organization_id = $1
+ORDER BY date DESC
+LIMIT 20;
+
+-- Network discovery: Find connections to LP org
+-- Uses: idx_network_company
+SELECT * FROM network_connections
+WHERE connection_company ILIKE '%' || $org_name || '%'
+ORDER BY relationship_strength ASC;
+
+-- Semantic search: Similar LPs
+-- Uses: idx_embeddings_vector
+SELECT content_id, 1 - (embedding <=> $query_embedding) AS similarity
+FROM embeddings
+WHERE content_type = 'organization_profile'
+ORDER BY embedding <=> $query_embedding
+LIMIT 10;
+```
+
+**Performance Targets:**
+- Dashboard load: <500ms
+- LP profile view: <300ms
+- Email draft generation: <3s
+- Semantic search: <1s
+
+---
+
+## Row Level Security (RLS) Policies
+
+### Security Model
+- All GPs can view all LP data (shared pipeline)
+- Only assigned owner can edit organization details
+- Admins can edit everything
+- Analysts have read-only access
+
+```sql
+-- Enable RLS on all tables
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE interactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE reminders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_drafts ENABLE ROW LEVEL SECURITY;
+
+-- Policy: All authenticated users can view organizations
+CREATE POLICY "View all organizations" ON organizations
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policy: Only owner or admin can update organization
+CREATE POLICY "Update own organizations" ON organizations
+  FOR UPDATE
+  TO authenticated
+  USING (
+    owner_id = auth.uid() OR
+    (SELECT role FROM users WHERE id = auth.uid()) = 'admin'
+  );
+
+-- Policy: All authenticated users can create contacts
+CREATE POLICY "Create contacts" ON contacts
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+-- Policy: All authenticated users can view all contacts
+CREATE POLICY "View all contacts" ON contacts
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policy: All authenticated users can create interactions
+CREATE POLICY "Create interactions" ON interactions
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+-- Policy: All authenticated users can view interactions
+CREATE POLICY "View all interactions" ON interactions
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policy: Only creator or admin can update reminders
+CREATE POLICY "Update own reminders" ON reminders
+  FOR UPDATE
+  TO authenticated
+  USING (
+    created_by = auth.uid() OR
+    (SELECT role FROM users WHERE id = auth.uid()) = 'admin'
+  );
+
+-- Policy: All authenticated users can view email drafts
+CREATE POLICY "View all email_drafts" ON email_drafts
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+-- Policy: Only reviewer can update draft status
+CREATE POLICY "Update email_drafts" ON email_drafts
+  FOR UPDATE
+  TO authenticated
+  USING (
+    reviewed_by = auth.uid() OR
+    (SELECT role FROM users WHERE id = auth.uid()) = 'admin'
+  );
+```
+
+---
+
+## Computed Fields & Triggers
+
+### Auto-Update Triggers
+
+**1. Update `organizations.days_since_contact` daily**
+
+```sql
+CREATE OR REPLACE FUNCTION update_days_since_contact()
+RETURNS void AS $$
+BEGIN
+  UPDATE organizations
+  SET days_since_contact = EXTRACT(DAY FROM (NOW() - last_interaction))
+  WHERE last_interaction IS NOT NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Schedule via cron extension or external scheduler
+-- SELECT cron.schedule('update-days-since-contact', '0 0 * * *', 'SELECT update_days_since_contact()');
+```
+
+**2. Update `organizations.last_interaction` when interaction created**
+
+```sql
+CREATE OR REPLACE FUNCTION update_last_interaction()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE organizations
+  SET last_interaction = NEW.date,
+      days_since_contact = 0
+  WHERE id = NEW.organization_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_last_interaction
+AFTER INSERT ON interactions
+FOR EACH ROW
+EXECUTE FUNCTION update_last_interaction();
+```
+
+**3. Auto-flag organizations as "Stalled" when days_since_contact > 25**
+
+```sql
+CREATE OR REPLACE FUNCTION auto_flag_stalled()
+RETURNS void AS $$
+BEGIN
+  UPDATE organizations
+  SET stage = 'Stalled'
+  WHERE days_since_contact > 25
+    AND stage NOT IN ('Pass', 'Committed', 'Stalled');
+END;
+$$ LANGUAGE plpgsql;
+
+-- Schedule via cron extension
+-- SELECT cron.schedule('auto-flag-stalled', '0 1 * * *', 'SELECT auto_flag_stalled()');
+```
+
+**4. Update `organizations.updated_at` on any change**
+
+```sql
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_organizations_updated_at
+BEFORE UPDATE ON organizations
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+-- Apply to all tables with updated_at field
+CREATE TRIGGER trigger_contacts_updated_at
+BEFORE UPDATE ON contacts
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+CREATE TRIGGER trigger_interactions_updated_at
+BEFORE UPDATE ON interactions
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+
+-- (Repeat for other tables)
+```
+
+---
+
+## Migration Scripts
+
+### Initial Migration (v1.0)
+
+```sql
+-- migrations/001_initial_schema.sql
+
+-- Enable extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Create tables in dependency order
+CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email TEXT UNIQUE NOT NULL,
+  full_name TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'partner',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE organizations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL,
+  owner_id UUID REFERENCES users(id),
+  priority TEXT CHECK (priority IN ('High', 'Medium', 'Low')),
+  stage TEXT NOT NULL CHECK (stage IN (
+    'Prospect', 'Outreach', 'In Discussion', 
+    'Verbal Interest', 'Committed', 'Stalled', 'Pass'
+  )),
+  investor_type TEXT CHECK (investor_type IN (
+    'Family Office', 'Foundation', 'Endowment', 'Pension'
+  )),
+  check_size_min INTEGER,
+  check_size_max INTEGER,
+  thesis TEXT,
+  fund_size INTEGER,
+  location TEXT,
+  upcoming_meeting TIMESTAMP WITH TIME ZONE,
+  last_interaction TIMESTAMP WITH TIME ZONE,
+  days_since_contact INTEGER,
+  tags TEXT[],
+  misc_notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE contacts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  first_name TEXT NOT NULL,
+  last_name TEXT NOT NULL,
+  email TEXT UNIQUE,
+  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
+  position TEXT,
+  location TEXT,
+  timezone TEXT,
+  linkedin_url TEXT,
+  image_url TEXT,
+  top_of_mind TEXT,
+  misc_notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE backchannels (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  backchannel_contact_id UUID NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  relationship_type TEXT,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(contact_id, backchannel_contact_id)
+);
+
+CREATE TABLE interactions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  interaction_type TEXT NOT NULL CHECK (interaction_type IN (
+    'Email', 'Call', 'Meeting', 'Deck View', 'Other'
+  )),
+  date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+  summary TEXT,
+  participants UUID[],
+  fireflies_url TEXT,
+  email_thread_id TEXT,
+  next_action TEXT,
+  next_action_date DATE,
+  ai_generated BOOLEAN DEFAULT FALSE,
+  sentiment TEXT CHECK (sentiment IN ('High Interest', 'Medium Interest', 'Low Interest', 'Neutral')),
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE reminders (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  reminder_date DATE NOT NULL,
+  reminder_type TEXT NOT NULL CHECK (reminder_type IN (
+    'Follow-up', 'Meeting Prep', 'Check-in', 'Custom'
+  )),
+  message TEXT,
+  status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (
+    'Pending', 'Completed', 'Dismissed'
+  )),
+  draft_email TEXT,
+  draft_approved BOOLEAN DEFAULT FALSE,
+  scheduled_send_time TIMESTAMP WITH TIME ZONE,
+  created_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE network_connections (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  gp_email TEXT NOT NULL,
+  connection_name TEXT NOT NULL,
+  connection_email TEXT,
+  connection_linkedin TEXT,
+  connection_company TEXT,
+  connection_position TEXT,
+  relationship_strength TEXT CHECK (relationship_strength IN (
+    '1st Degree', '2nd Degree'
+  )),
+  last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE email_drafts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  recipient_contact_id UUID REFERENCES contacts(id),
+  subject TEXT,
+  body TEXT NOT NULL,
+  draft_type TEXT CHECK (draft_type IN (
+    'Follow-up', 'Introduction', 'Check-in', 'Re-engagement', 'Custom'
+  )),
+  status TEXT NOT NULL DEFAULT 'Pending Review' CHECK (status IN (
+    'Pending Review', 'Approved', 'Edited', 'Sent', 'Dismissed'
+  )),
+  scheduled_send_time TIMESTAMP WITH TIME ZONE,
+  sent_at TIMESTAMP WITH TIME ZONE,
+  gmail_message_id TEXT,
+  edit_history JSONB,
+  created_by_agent BOOLEAN DEFAULT TRUE,
+  reviewed_by UUID REFERENCES users(id),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE embeddings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'organization_profile', 'contact_note', 'interaction_summary', 'email_thread'
+  )),
+  content_id UUID NOT NULL,
+  content_text TEXT NOT NULL,
+  embedding VECTOR(1536),
+  metadata JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes (see Indexes section above for full list)
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_organizations_stage ON organizations(stage);
+CREATE INDEX idx_organizations_owner ON organizations(owner_id);
+CREATE INDEX idx_organizations_days_since_contact ON organizations(days_since_contact);
+-- ... (add all indexes from section above)
+
+-- Create triggers
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_organizations_updated_at
+BEFORE UPDATE ON organizations
+FOR EACH ROW
+EXECUTE FUNCTION update_updated_at();
+-- ... (add all triggers from section above)
+
+-- Enable RLS
+ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE interactions ENABLE ROW LEVEL SECURITY;
+-- ... (add all RLS policies from section above)
+```
+
+### Seed Data (Development)
+
+```sql
+-- migrations/002_seed_data.sql
+
+-- Insert test user
+INSERT INTO users (email, full_name, role) VALUES
+('james@blackopsvc.com', 'James Norman', 'admin');
+
+-- Insert sample organizations
+INSERT INTO organizations (name, owner_id, priority, stage, investor_type, check_size_min, check_size_max, thesis, location, tags) VALUES
+('Hamilton Family Office', (SELECT id FROM users WHERE email = 'james@blackopsvc.com'), 'High', 'In Discussion', 'Family Office', 1000, 2000, 'Early-stage software, impact investing', 'San Francisco, CA', ARRAY['diverse managers', 'impact']),
+('Acme Foundation', (SELECT id FROM users WHERE email = 'james@blackopsvc.com'), 'Medium', 'Outreach', 'Foundation', 500, 1000, 'DEI-focused venture funds, education tech', 'New York, NY', ARRAY['diverse managers', 'black equity']);
+
+-- Insert sample contacts
+INSERT INTO contacts (first_name, last_name, email, organization_id, position, linkedin_url) VALUES
+('Lauren', 'Jacobson', 'lauren@hamiltonfamilyoffice.com', (SELECT id FROM organizations WHERE name = 'Hamilton Family Office'), 'General Partner', 'https://linkedin.com/in/laurenjacobson'),
+('Sarah', 'Chen', 'sarah@acmefoundation.org', (SELECT id FROM organizations WHERE name = 'Acme Foundation'), 'Program Director', 'https://linkedin.com/in/sarahchen');
+```
+
+---
+
+## Data Validation Rules
+
+### Application-Level Constraints
+
+**Organizations:**
+- `check_size_min` ≤ `check_size_max` (if both provided)
+- `upcoming_meeting` cannot be in the past
+- `stage` transitions must follow valid flow (Prospect → Outreach → In Discussion → etc.)
+- Cannot delete organization with `stage = 'Committed'`
+
+**Contacts:**
+- `email` must match regex pattern for valid email
+- `timezone` must be valid IANA timezone string
+- `linkedin_url` must start with `https://linkedin.com/` or `https://www.linkedin.com/`
+
+**Interactions:**
+- `participants` array must contain valid contact IDs
+- `date` cannot be in the future
+- `next_action_date` must be >= `date`
+
+**Reminders:**
+- `reminder_date` must be today or future
+- Cannot approve draft (`draft_approved = TRUE`) without `draft_email` content
+- `scheduled_send_time` must be after approval timestamp
+
+**Email Drafts:**
+- `body` must be between 50-500 words for valid LP emails
+- `scheduled_send_time` must be in the future
+- Cannot transition from 'Sent' to any other status
+
+---
+
+## Sample Queries
+
+### Get LP pipeline snapshot
+
+```sql
+SELECT 
+  stage,
+  COUNT(*) as count,
+  SUM((check_size_min + check_size_max) / 2) as potential_commitment_k
+FROM organizations
+WHERE stage NOT IN ('Pass', 'Committed')
+GROUP BY stage
+ORDER BY 
+  CASE stage
+    WHEN 'Verbal Interest' THEN 1
+    WHEN 'In Discussion' THEN 2
+    WHEN 'Outreach' THEN 3
+    WHEN 'Prospect' THEN 4
+    WHEN 'Stalled' THEN 5
+  END;
+```
+
+### Get LPs requiring follow-up for Sunday digest
+
+```sql
+SELECT 
+  o.id,
+  o.name,
+  o.stage,
+  o.days_since_contact,
+  r.reminder_date,
+  r.draft_email,
+  c.first_name || ' ' || c.last_name as primary_contact
+FROM organizations o
+LEFT JOIN reminders r ON o.id = r.organization_id AND r.status = 'Pending'
+LEFT JOIN contacts c ON o.id = c.organization_id
+WHERE 
+  (o.days_since_contact > 40 OR r.reminder_date <= CURRENT_DATE + INTERVAL '7 days')
+  AND o.stage NOT IN ('Pass', 'Committed')
+ORDER BY o.priority DESC, o.days_since_contact DESC;
+```
+
+### Find warm intro paths to specific LP
+
+```sql
+WITH lp_contacts AS (
+  SELECT email, first_name, last_name
+  FROM contacts
+  WHERE organization_id = $org_id
+)
+SELECT 
+  nc.gp_email,
+  nc.connection_name,
+  nc.connection_company,
+  nc.relationship_strength,
+  lp.first_name || ' ' || lp.last_name as lp_contact
+FROM network_connections nc
+INNER JOIN lp_contacts lp ON 
+  nc.connection_email = lp.email OR
+  nc.connection_company ILIKE '%' || (SELECT name FROM organizations WHERE id = $org_id) || '%'
+ORDER BY 
+  CASE nc.relationship_strength
+    WHEN '1st Degree' THEN 1
+    WHEN '2nd Degree' THEN 2
+  END;
+```
+
+### Get interaction timeline for LP profile
+
+```sql
+SELECT 
+  i.date,
+  i.interaction_type,
+  i.summary,
+  i.sentiment,
+  i.fireflies_url,
+  array_agg(c.first_name || ' ' || c.last_name) as participants
+FROM interactions i
+LEFT JOIN LATERAL unnest(i.participants) AS participant_id ON true
+LEFT JOIN contacts c ON c.id = participant_id
+WHERE i.organization_id = $org_id
+GROUP BY i.id, i.date, i.interaction_type, i.summary, i.sentiment, i.fireflies_url
+ORDER BY i.date DESC
+LIMIT 20;
+```
+
+---
+
+## Backup & Recovery
+
+**Supabase Automatic Backups:**
+- Daily automated backups (Pro tier)
+- Point-in-time recovery up to 7 days
+- Manual snapshots before major migrations
+
+**Export Strategy:**
+```bash
+# Export all data to JSON (scheduled weekly)
+pg_dump -h db.xxx.supabase.co -U postgres -d postgres --data-only --format=custom > backup_$(date +%Y%m%d).dump
+```
+
+---
+
+## Version History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | Oct 30, 2025 | Initial data model specification |
+
+---
